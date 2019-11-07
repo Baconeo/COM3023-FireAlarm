@@ -43,7 +43,7 @@ float tempTranslate(float temp) {
 }
 
 static void calibrate(int cTemps[], int cLights[]) {
-	int i=0;l
+	int i=0;
 	int tSize=sizeof(cTemps);
 	int lSize=sizeof(cLights);
 	int temp=0;
@@ -63,8 +63,8 @@ static void calibrate(int cTemps[], int cLights[]) {
 static void broadcast_recv(struct broadcast_conn *c, const rimeaddr_t *from)
 {
 	unsigned char * data = (char *)packetbuf_dataptr();
-	printf("RECEIVED: %s",data);
 	if(data == "ALARM") {
+		printf("!! ALARM !!\n");
 		printf("EXCEEDED LIMITS AT (%d.%d) \n", from->u8[0], from->u8[1]);
 	}
 
@@ -74,7 +74,6 @@ static const struct broadcast_callbacks broadcast_call = {broadcast_recv};
 PROCESS_THREAD(checker, ev, data) 
 {
 	static struct etimer et;
-	static int alarmed = 0;
 	PROCESS_EXITHANDLER(broadcast_close(&broadcast);)
 	PROCESS_BEGIN();
 	broadcast_open(&broadcast, 240, &broadcast_call);
@@ -107,14 +106,6 @@ PROCESS_THREAD(checker, ev, data)
 		SENSORS_ACTIVATE(light_sensor);
 		SENSORS_ACTIVATE(sht11_sensor);
 
-		float temptemp = tempTranslate(sht11_sensor.value(SHT11_SENSOR_TEMP));
-		float light = lux2(light_sensor.value(LIGHT_SENSOR_PHOTOSYNTHETIC));
-
-		unsigned short tempD1 = d1(temptemp);
-                unsigned short tempD2 = d2(temptemp);
-		unsigned short lightD1 = d1(light);
-		unsigned short lightD2 = d2(light);
-
 		unsigned int formattedTemp = d1(tempTranslate(sht11_sensor.value(SHT11_SENSOR_TEMP)));
 		unsigned int formattedLux = lux(light_sensor.value(LIGHT_SENSOR_PHOTOSYNTHETIC));
 
@@ -122,35 +113,19 @@ PROCESS_THREAD(checker, ev, data)
 		SENSORS_DEACTIVATE(light_sensor);
 		SENSORS_DEACTIVATE(sht11_sensor);
 
-			char formattedTemp123[32];
-			sprintf(formattedTemp123, "%u", tempD1);
-			sprintf(formattedTemp123 + strlen(formattedTemp123),",");
-			sprintf(formattedTemp123 + strlen(formattedTemp123), "%u", tempD2);
-			sprintf(formattedTemp123 + strlen(formattedTemp123),",");
-			sprintf(formattedTemp123 + strlen(formattedTemp123), "%u", lightD1);
-			sprintf(formattedTemp123 + strlen(formattedTemp123),",");
-			sprintf(formattedTemp123 + strlen(formattedTemp123), "%u", lightD2);
-
-			packetbuf_copyfrom(formattedTemp,32);
-
-			broadcast_send(&broadcast);
-		printf("TEMP: %uC LIGHT: %ulx \n", formattedTemp, formattedLux);
-
 		if (formattedTemp >= TEMP_LIMIT && formattedLux >= LIGHT_LIMIT+100) {
 			printf("!! ALARM !!\n");
 			printf("!! CURRENT TEMPERATE AT: %uC & LIGHT LEVELS AT: %ulx HAVE EXCEEDED LIMITS !!\n", formattedTemp, formattedLux);
-			//packetbuf_copyfrom("ALARM",4);
+			packetbuf_copyfrom("ALARM",4);
 
-
-			if(alarmed < 1) {
+			if(!process_is_running(&alarm)) {
 				process_start(&alarm, NULL);
-				alarmed = 1;
-			} else {
-				alarmed = 0;
 			}
 		} else {
 			process_exit(&alarm);
-			alarmed = 0;
+			if(leds_get()==4) {
+				leds_toggle(LEDS_RED);
+			}
 		}
 	}
 	PROCESS_END();
@@ -163,11 +138,10 @@ PROCESS_THREAD(alarm, ev, data)
 
 	while(1) {
 	    leds_toggle(LEDS_RED);
-
 	    etimer_set(&et_blink, BLINK_INTERVAL);
 	    PROCESS_WAIT_EVENT_UNTIL(ev == PROCESS_EVENT_TIMER);
-
 	}
+
 	return NULL;
 	PROCESS_END();
 }
